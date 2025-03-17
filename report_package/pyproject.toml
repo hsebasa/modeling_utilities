@@ -1,0 +1,11 @@
+[project]
+name = "model_report"
+version = "0.0.0"
+description = "Package for aiding in the construction of model reports"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit_core >=3.2,<4"]

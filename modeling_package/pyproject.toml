@@ -1,0 +1,11 @@
+[project]
+name = "standard_modeling"
+version = "0.0.0"
+description = "Package for modeling utilities"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit_core >=3.2,<4"]

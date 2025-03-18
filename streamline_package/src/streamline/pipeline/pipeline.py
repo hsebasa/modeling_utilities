@@ -7,7 +7,7 @@
 
 from streamline import __version__
 import streamline as sl
-from .step import _Step, Function, Delete
+from .step import _Step, Function, Delete, VariablesDict
 
 from typing import List, Dict, Optional, Tuple, Union, Callable, Set
 from importlib import import_module
@@ -48,7 +48,6 @@ class _Pipeline:
             assert isinstance(a, list) or hasattr(a, 'to_list')
             if hasattr(a, 'to_list'):
                 a = a.to_list()
-                kwargs = a.kwargs | kwargs
             assert all((isinstance(step, _Step) for step in a))
         self.__steps = a
 
@@ -72,12 +71,12 @@ class _Pipeline:
     def to_list(self):
         return list(self.items())
 
-    def rename(self, params: Dict[str, str]):
+    def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
         Rename parameters in the function call for all steps in the pipeline.
         """
         for step in self.__steps:
-            step.rename(params=params)
+            step.rename(variables=variables, arg_cat=arg_cat)
         return self
 
     def _append(self, step: _Step):
@@ -201,10 +200,10 @@ class Pipeline(_Pipeline):
 
     def __copy__(self):
         return Pipeline(
-            a=copy(self.__steps)
+            a=copy([copy(step) for step in self.__steps])
         )
 
-    def __deepcopy__(self):
+    def __deepcopy__(self, memo):
         return Pipeline(
             a=deepcopy(self.__steps)
         )
@@ -225,10 +224,10 @@ class Pipeline(_Pipeline):
         
     def add_step(
             self,
-            step: Union[Function, Delete],
+            step: Union[Function, Delete, VariablesDict],
             index: Optional[int]=None,
         ):
-        assert isinstance(step, (Function, Delete)), type(step)
+        assert isinstance(step, (Function, Delete, VariablesDict)), type(step)
         self._add_step(index=index, step=step)
         return self
         
@@ -269,6 +268,23 @@ class Pipeline(_Pipeline):
             step = a
         else:
             step = Delete(args=a, arg_cat=arg_cat, tags=tags)
+        self._add_step(index=index, step=step)
+        return self
+        
+    def add_variables_dict(
+            self,
+            a: Union[VariablesDict, Dict],
+            index: Optional[int]=None,
+
+            arg_cat: Optional[str]=None,
+            tags: Optional[Set[str]]=None,
+        ):
+        assert isinstance(a, (VariablesDict, Dict)), type(a)
+        if isinstance(a, VariablesDict):
+            assert arg_cat is None and tags is None
+            step = a
+        else:
+            step = VariablesDict(a, arg_cat=arg_cat, tags=tags)
         self._add_step(index=index, step=step)
         return self
     

@@ -68,15 +68,41 @@ class _Step:
         assert not create_call, 'Not implemented'
         return inspect.getsource(self._fun)
 
-    def rename(self, params: Dict[str, str]):
+    def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
-        Rename parameters in the function call.
+        Rename variables in the step's args and kw based on the provided mapping.
+        This is useful for updating variable names in a pipeline step when the
+        variable names in the environment have changed.
+
+        :param variables: A dictionary mapping old variable names to new variable names.
+        :type variables: dict
+
+        :param arg_cat: The new argument category for the step.
+        :type arg_cat: str
+
+        :return: self, for method chaining.
+        :rtype: _Step
+        :raises ValueError: If any of the args or kw are not strings or Var instances.
+        :raises AssertionError: If the args or kw are not of the expected types.
         """
-        self._args = [Var(params.get(a.name, a.name)) if isinstance(a, Var) else a for a in self._args]
-        self._kw = {
-            k: Var(params.get(v.name, v.name)) if isinstance(v, Var) else v
-            for k, v in self._kw.items()
-        }
+        if variables is not None:
+            assert type(variables) is dict or callable, 'variables must be a dict or callable'
+            if type(variables) is dict:
+                fun = lambda x: variables.get(x, x)
+            else:
+                fun = variables
+            self._args = [Var(fun(a.name)) if isinstance(a, Var) else a for a in self._args]
+            self._kw = {
+                k: Var(fun(v.name)) if isinstance(v, Var) else v
+                for k, v in self._kw.items()
+            }
+        if arg_cat is not None:
+            assert type(arg_cat) is dict or callable or str, 'arg_cat must be a dict or callable'
+            if type(arg_cat) is dict:
+                arg_cat = lambda x: arg_cat.get(x, x)
+            elif type(arg_cat) is str:
+                arg_cat = lambda x: arg_cat
+            self._arg_cat = arg_cat(self._arg_cat)
         return self
     
     @property
@@ -117,24 +143,30 @@ class Function(_Step):
         self._fun = fun
         if tags is None:
             tags = set()
-        super().__init__(args=args, kw=kw, arg_cat=arg_cat, tags={'function'}|tags)
+        super().__init__(args=args, kw=kw, arg_cat=arg_cat, tags=sl.tags.STEP_FUNCTION|tags)
         assert out_var is None or type(out_var) is str or ((type(out_var) is tuple or type(out_var) is list) and all((type(a) is str for a in out_var)))
 
         self._out_var = out_var
 
-    def rename(self, params: Dict[str, str]):
+    def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
         Rename parameters in the function call.
         """
-        super().rename(params)
-        if isinstance(self._out_var, str):
-            self._out_var = params.get(self._out_var, self._out_var)
-        elif isinstance(self._out_var, (list, tuple)):
-            self._out_var = tuple(params.get(v, v) for v in self._out_var)
-        elif self._out_var is None:
-            pass
-        else:
-            raise ValueError('out_var must be str, list or tuple')
+        super().rename(variables=variables, arg_cat=arg_cat)
+        if variables is not None:
+            assert type(variables) is dict or callable, 'variables must be a dict or callable'
+            if type(variables) is dict:
+                fun = lambda x: variables(x)
+            else:
+                fun = variables
+            if isinstance(self._out_var, str):
+                self._out_var = fun(self._out_var)
+            elif isinstance(self._out_var, (list, tuple)):
+                self._out_var = tuple(fun(v) for v in self._out_var)
+            elif self._out_var is None:
+                pass
+            else:
+                raise ValueError('out_var must be str, list or tuple')
         return self
 
     def __call__(self, env, kw: Dict):
@@ -175,7 +207,7 @@ class Delete(_Step):
             args = [args]
         if tags is None:
             tags = set()
-        super().__init__(args=args, arg_cat=arg_cat, tags={'delete'}|tags)
+        super().__init__(args=args, arg_cat=arg_cat, tags=sl.tags.STEP_DELETE|tags)
         assert all([type(a) is str or isinstance(a, Var) for a in args]), 'All args must be strings'
 
     def __call__(self, env, kw: Dict):
@@ -186,3 +218,29 @@ class Delete(_Step):
                 del env[a]
         return None
     
+
+class VariablesDict(_Step):
+    __stepname__ = 'Function'
+    def __init__(
+            self,
+            
+            kw: Optional[Dict]=None,
+
+            arg_cat: Optional[str]=None,
+            tags: Optional[Set[str]]=None,
+        ):
+        if tags is None:
+            tags = set()
+        super().__init__(kw=kw, arg_cat=arg_cat, tags=sl.tags.STEP_VARIABLES_DICT|tags)
+
+    def __call__(self, env, kw: Dict):
+        def cvar(v):
+            if isinstance(v, Var):
+                return env[v.name]
+            return v
+        kwargs = self._kw | kw
+        kwargs = {a: cvar(b) for a, b in kwargs.items()}
+
+        for a, b in kwargs.items():
+            env[a] = cvar(b)
+        return None

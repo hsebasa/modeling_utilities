@@ -1,6 +1,6 @@
-from streamline.pipeline.pipeline import Pipeline, Step, StepNotFound, _Vertical, concat
+from streamline.pipeline import Pipeline, StepNotFound, concat, Function, Var
+from streamline.pipeline.pipeline import _Vertical
 from streamline.delayed import Delayed, step
-from streamline.functions import Function
 
 import streamline as sl
 
@@ -42,14 +42,12 @@ class TestStringMethods(unittest.TestCase):
         
     def test_pipeline(self):
         pipe = sl.Pipeline([
-            sl.Step(lambda env, kw: 3, 's')
+            Function(lambda *a, **kw: 3, arg_cat='s')
         ]).add_step(
-            kw={'s': 'd', 'e': 'n', 'h': 3},
-            a=Function(
+            step=Function(
                 fun=lambda x, s, e, f, h: (x**2+1, s, e, f, h),
-                in_vars='a',
-                in_vars_kw={'e': 'a'},
-                in_kw={'f': 8, 'h': 5},
+                args=[Var('a')],
+                kw={'e': Var('a'), 'f': 8, 'h': 5, 's': 'd', 'e': 'n', 'h': 3},
                 out_var=('b', 'c', 'e', 'f', 'h')
             )
         )
@@ -69,26 +67,25 @@ class TestStringMethods(unittest.TestCase):
         def dummy():
             return np.random.rand()
             
-        def dummy2(env, kw):
-            env['myid'] = id(env)
-            env['lst'].append(id(env))
+        def dummy2():
+            myid = id(self)
+            return myid, [myid]
         
         pipe = Pipeline([
-            Step(lambda env, kw: 3, 's')
-        ]).add_step(
-            arg_cat='f',
+            Function(lambda *args, **kw: 3, arg_cat='s')
+        ]).add_function(
             # kw={'s': 'd', 'e': 'n', 'h': 3},
             a=Function(
                 fun=lambda x, s, e, f, h: (x**2+1, s, e, f, h),
-                in_vars='a',
-                in_vars_kw={'e': 'a'},
-                in_kw={'f': 8, 'h': 5},
-                out_var=('b', 'c', 'e', 'f', 'h')
+                args=[Var('a')],
+                kw={'e': Var('a'), 'f': 8, 'h': 5},
+                out_var=('b', 'c', 'e', 'f', 'h'),
+                arg_cat='f',
             )
         ).add_import_lib(
             {'numpy': 'np', 'pandas': 'pd'},
             index=0
-        ).add_step(Function(dummy, out_var='r')).add_step(dummy2)
+        ).add_function(Function(dummy, out_var='r')).add_function(dummy2)
         env = pipe.run({'a': 3, 'e': 'k', 'lst': []}, {'f_s': 'd', 'f_e': 'n', 'f_h': 3})
         
         assert env['a'] == 3
@@ -101,18 +98,18 @@ class TestStringMethods(unittest.TestCase):
     def test_delay(self):
         step = sl.Delayed(prefix='step')
         d = sl.delay_lib.type((step.tags.contains(3)) & (step.tags.contains(1))).__name__.isin(['bool'])
-        res = sl.eval_delay(d, env={'step': sl.Step(arg_cat='s', fun=lambda x: x, tags={1, 2})})
+        res = sl.eval_delay(d, env={'step': Function(arg_cat='s', fun=lambda x: x, tags={1, 2})})
         assert res
 
-        res = sl.eval_delay(step.tags.contains(3), env={'step': sl.Step(arg_cat='s', fun=lambda x: x, tags={1, 2})})
+        res = sl.eval_delay(step.tags.contains(3), env={'step': Function(arg_cat='s', fun=lambda x: x, tags={1, 2})})
         assert not res
         
 
 class TestPipeline(unittest.TestCase):
 
     def setUp(self):
-        self.step1 = Step(fun=lambda env, kw: 1, arg_cat='step1')
-        self.step2 = Step(fun=lambda env, kw: 2)
+        self.step1 = Function(fun=lambda : 1, arg_cat='step1')
+        self.step2 = Function(fun=lambda : 2)
         self.pipeline = Pipeline(a=[self.step1, self.step2])
 
     def test_pipeline_initialization(self):
@@ -128,7 +125,7 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(list(self.pipeline.items()), [self.step1, self.step2])
 
     def test_pipeline_append(self):
-        step3 = Step(fun=lambda env, kw: 3)
+        step3 = Function(fun=lambda env, kw: 3)
         self.pipeline._append(step3)
         self.assertEqual(len(self.pipeline.to_list()), 3)
 
@@ -148,17 +145,17 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(self.pipeline.to_list()), 1)
 
     def test_pipeline_setitem(self):
-        step3 = Step(fun=lambda env, kw: 3)
+        step3 = Function(fun=lambda env, kw: 3)
         self.pipeline._setitem([0], step3)
         self.assertEqual(self.pipeline.to_list()[0], step3)
 
     def test_pipeline_insert(self):
-        step3 = Step(fun=lambda env, kw: 3)
+        step3 = Function(fun=lambda env, kw: 3)
         self.pipeline._insert(1, step3)
         self.assertEqual(self.pipeline.to_list()[1], step3)
 
     def test_pipeline_add_step(self):
-        step3 = Step(fun=lambda env, kw: 3)
+        step3 = Function(fun=lambda env, kw: 3)
         self.pipeline.add_step(step3)
         self.assertEqual(len(self.pipeline.to_list()), 3)
 

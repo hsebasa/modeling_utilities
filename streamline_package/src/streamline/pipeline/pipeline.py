@@ -1,12 +1,17 @@
+# Copyright (c) 2025, streamline
+# All rights reserved.
+#
+# This source code is licensed under the BSD 3-Clause License found in the
+# LICENSE file in the root directory of this source tree.
+# -*- coding: utf-8 -*-
+
 from streamline import __version__
-from streamline.functions import Function
 import streamline as sl
-from .step import Step
+from .step import _Step, Function, Delete
 
 from typing import List, Dict, Optional, Tuple, Union, Callable, Set
 from importlib import import_module
-from copy import deepcopy
-import inspect
+from copy import copy, deepcopy
 
 
 class StepNotFound(Exception):
@@ -35,7 +40,7 @@ class _Pipeline:
     __version__ = __version__
     def __init__(
             self,
-            a: Optional[List[Step]]=None,
+            a: Optional[List[_Step]]=None,
         ):
         if a is None:
             a = list()
@@ -44,7 +49,7 @@ class _Pipeline:
             if hasattr(a, 'to_list'):
                 a = a.to_list()
                 kwargs = a.kwargs | kwargs
-            assert all((isinstance(step, Step) for step in a))
+            assert all((isinstance(step, _Step) for step in a))
         self.__steps = a
 
     def print(self, show_args: Optional[bool]=False):
@@ -67,8 +72,8 @@ class _Pipeline:
     def to_list(self):
         return list(self.items())
 
-    def _append(self, step: Step):
-        assert isinstance(step, Step)
+    def _append(self, step: _Step):
+        assert isinstance(step, _Step)
         self.__steps.append(step)
     
     def apply(self, a, globals_=None):
@@ -120,8 +125,8 @@ class _Pipeline:
                 raise StepNotFound(f"Step index {index} out of range")
             del self.__steps[index]
         
-    def _setitem(self, index: int, step: Step):
-        assert isinstance(step, Step)
+    def _setitem(self, index: int, step: _Step):
+        assert isinstance(step, _Step)
         if type(index) is _Vertical:
             assert len(index) == len(self.__steps)
             res = []
@@ -135,13 +140,13 @@ class _Pipeline:
         else:
             raise NotImplementedError
     
-    def _insert(self, index: int, step: Step):
+    def _insert(self, index: int, step: _Step):
         assert type(index) is int
         self.__steps.insert(index, step)
 
     def _add_step(
             self,
-            step: Step,
+            step: _Step,
             index: Optional[int]=None,
         ):
         if index is None:
@@ -165,7 +170,7 @@ class _Loc:
     def __getitem__(self, index):
         index = self._stdize_index(index)
         steps = self.__pipe._getitem(index)
-        if isinstance(steps, Step):
+        if isinstance(steps, _Step):
             steps = [steps]
         return Pipeline(a=steps)
 
@@ -173,7 +178,7 @@ class _Loc:
         index = self._stdize_index(index)
         self.__pipe._delitem(index)
 
-    def __setitem__(self, index: int, step: Step):
+    def __setitem__(self, index: int, step: _Step):
         index = self._stdize_index(index)
         self.__pipe._setitem(index, step)
 
@@ -212,17 +217,52 @@ class Pipeline(_Pipeline):
         
     def add_step(
             self,
-            a: Union[Step, Callable],
+            step: Union[Function, Delete],
             index: Optional[int]=None,
+        ):
+        assert isinstance(step, (Function, Delete)), type(step)
+        self._add_step(index=index, step=step)
+        return self
+        
+    def add_function(
+            self,
+            a: Union[Function, Callable],
+            index: Optional[int]=None,
+
+            args: Optional[List[str]]=None,
+            kw: Optional[Dict]=None,
+
+            out_var: Optional[Union[str, Tuple[str]]]=None,
+
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
-            kw: Optional[Dict]=None,
         ):
-        if isinstance(a, Step):
-            assert arg_cat is None and tags is None
+        assert isinstance(a, (Function, Callable)), type(a)
+        if isinstance(a, Function):
+            assert arg_cat is None and tags is None and out_var is None
+            assert args is None and kw is None
             step = a
         else:
-            step = Step(fun=a, arg_cat=arg_cat, tags=tags, kw=kw)
+            step = Function(fun=a, args=args, kw=kw, out_var=out_var, arg_cat=arg_cat, tags=tags)
+        self._add_step(index=index, step=step)
+        return self
+        
+    def add_delete(
+            self,
+            a: Union[Delete, Callable],
+            index: Optional[int]=None,
+
+            args: Optional[List[str]]=None,
+            
+            arg_cat: Optional[str]=None,
+            tags: Optional[Set[str]]=None,
+        ):
+        assert isinstance(a, (Delete, Callable)), type(a)
+        if isinstance(a, Delete):
+            assert arg_cat is None and tags is None and args is None
+            step = a
+        else:
+            step = Function(fun=a, args=args, arg_cat=arg_cat, tags=tags)
         self._add_step(index=index, step=step)
         return self
     
@@ -238,7 +278,7 @@ class Pipeline(_Pipeline):
             
         if type(a) is str:
             if alias is None:
-                alias = name
+                alias = a
             a = {a: alias}
         else:
             assert type(a) is dict
@@ -249,10 +289,12 @@ class Pipeline(_Pipeline):
         for c in a.items():
             names.append(c[0])
             aliases.append(c[1])
-        self.add_step(
-            a=Function(lambda : [import_module(n) for n in names], out_var=aliases),
+        self.add_function(
+            a=Function(
+                lambda : [import_module(n) for n in names], out_var=aliases,
+                tags={'import_lib'}|tags,
+            ),
             index=index,
-            tags={'import_lib'}|tags,
         )
         return self
 

@@ -14,7 +14,7 @@ class Node:
         self.params = params if params else []
 
     def __repr__(self):
-        return f"Node(name={self.name}, max_feats={max_feats}, params={self.params})"
+        return f"Node(name={self.name}, max_feats={self.max_feats}, params={self.params})"
 
 
 class DAG:

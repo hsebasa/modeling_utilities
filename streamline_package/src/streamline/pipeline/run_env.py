@@ -1,7 +1,7 @@
 from streamline.utilities import save_json, load_json, save_obj, load_obj, save_pandas_df, load_pandas_df
 from streamline import __version__
 import streamline as sl
-from .step import Step
+from .step import _Step
 
 
 from typing import Optional, Dict, List, Any
@@ -57,7 +57,7 @@ class RunEnv:
     def __iter__(self):
         return self._env.__iter__()
 
-    def _add_step(self, step: Step, kwargs: dict()):
+    def _add_step(self, step: _Step, kwargs: dict()):
         if '__preamble__' not in self._env:
             self._env['__preamble__'] = dict()
         

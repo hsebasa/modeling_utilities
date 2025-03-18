@@ -103,6 +103,24 @@ class TestStringMethods(unittest.TestCase):
 
         res = sl.eval_delay(step.tags.contains(3), env={'step': Function(arg_cat='s', fun=lambda x: x, tags={1, 2})})
         assert not res
+
+    def test_rename(self):
+        pipe2 = Pipeline([Function(lambda a, b, c: (a, b, c), args=[Var('s')], kw={'b': Var('t'), 'c': 4})]).add_delete([Var('m')])
+        run2 = pipe2.run({'s': 2, 't': 3, 'm': 5})
+        assert run2['s'] == 2
+        assert run2['t'] == 3
+        assert 'm' not in run2
+        assert run2['_'] == (2, 3, 4)
+
+        pipe3 = pipe2.copy()
+        pipe3.rename({'s': 'n', 't': 'a', 'm': 'd'})
+        run3 = pipe2.run({'n': 2, 'a': 3, 'd': 4})
+        assert run3['n'] == 2
+        assert run3['a'] == 3
+        assert 'd' not in run3
+        assert 's' not in run3
+        assert 't' not in run3
+        assert run2['_'] == (2, 3, 4)
         
 
 class TestPipeline(unittest.TestCase):

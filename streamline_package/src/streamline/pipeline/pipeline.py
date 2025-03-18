@@ -72,6 +72,14 @@ class _Pipeline:
     def to_list(self):
         return list(self.items())
 
+    def rename(self, params: Dict[str, str]):
+        """
+        Rename parameters in the function call for all steps in the pipeline.
+        """
+        for step in self.__steps:
+            step.rename(params=params)
+        return self
+
     def _append(self, step: _Step):
         assert isinstance(step, _Step)
         self.__steps.append(step)
@@ -203,9 +211,9 @@ class Pipeline(_Pipeline):
 
     def copy(self, deep: Optional[bool]=False):
         if deep:
-            deepcopy(self)
+            return deepcopy(self)
         else:
-            copy(self)
+            return copy(self)
         
     @property
     def loc(self):
@@ -249,20 +257,18 @@ class Pipeline(_Pipeline):
         
     def add_delete(
             self,
-            a: Union[Delete, Callable],
+            a: Union[Delete, str, List[str]],
             index: Optional[int]=None,
-
-            args: Optional[List[str]]=None,
             
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
-        assert isinstance(a, (Delete, Callable)), type(a)
+        assert isinstance(a, (Delete, str, list)), type(a)
         if isinstance(a, Delete):
-            assert arg_cat is None and tags is None and args is None
+            assert arg_cat is None and tags is None
             step = a
         else:
-            step = Function(fun=a, args=args, arg_cat=arg_cat, tags=tags)
+            step = Delete(args=a, arg_cat=arg_cat, tags=tags)
         self._add_step(index=index, step=step)
         return self
     

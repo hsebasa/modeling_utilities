@@ -39,7 +39,7 @@ class _Step:
             # if a single string or Var is passed, convert to list
             args = [args]
         # assert all elements are strings or Var
-        assert all([type(a) is str or type(a) is Var for a in args]), 'All args must be strings or Var'
+        assert all([type(a) is str or isinstance(a, Var) for a in args]), 'All args must be strings or Var'
         assert type(args) is list
         self._args = args
         
@@ -67,6 +67,17 @@ class _Step:
     def __sourcecode__(self, create_call: Optional[bool]=False):
         assert not create_call, 'Not implemented'
         return inspect.getsource(self._fun)
+
+    def rename(self, params: Dict[str, str]):
+        """
+        Rename parameters in the function call.
+        """
+        self._args = [Var(params.get(a.name, a.name)) if isinstance(a, Var) else a for a in self._args]
+        self._kw = {
+            k: Var(params.get(v.name, v.name)) if isinstance(v, Var) else v
+            for k, v in self._kw.items()
+        }
+        return self
     
     @property
     def arg_cat(self):
@@ -111,6 +122,21 @@ class Function(_Step):
 
         self._out_var = out_var
 
+    def rename(self, params: Dict[str, str]):
+        """
+        Rename parameters in the function call.
+        """
+        super().rename(params)
+        if isinstance(self._out_var, str):
+            self._out_var = params.get(self._out_var, self._out_var)
+        elif isinstance(self._out_var, (list, tuple)):
+            self._out_var = tuple(params.get(v, v) for v in self._out_var)
+        elif self._out_var is None:
+            pass
+        else:
+            raise ValueError('out_var must be str, list or tuple')
+        return self
+
     def __call__(self, env, kw: Dict):
         def cvar(v):
             if isinstance(v, Var):
@@ -150,10 +176,12 @@ class Delete(_Step):
         if tags is None:
             tags = set()
         super().__init__(args=args, arg_cat=arg_cat, tags={'delete'}|tags)
-        assert all([type(a) is str for a in args]), 'All args must be strings'
+        assert all([type(a) is str or isinstance(a, Var) for a in args]), 'All args must be strings'
 
     def __call__(self, env, kw: Dict):
         for a in self._args:
+            if isinstance(a, Var):
+                a = a.name
             if a in env:
                 del env[a]
         return None

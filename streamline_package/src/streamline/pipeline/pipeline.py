@@ -71,6 +71,53 @@ class _Pipeline:
     def to_list(self):
         return list(self.items())
 
+    def __len__(self):
+        return len(self.__steps)
+    
+    def __iter__(self):
+        return iter(self.__steps)
+    
+    def get_env_info(self):
+        """
+        Get all dependencies for all steps in the pipeline.
+        """
+        res = list()
+        defs = set()
+        accum_deps = set()
+        for step in self.__steps:
+            new_defs = set()
+            rm_defs = set()
+            if type(step) is Function:
+                if step.out_var is not None:
+                    if isinstance(step.out_var, str):
+                        new_defs = set([step.out_var])
+                    else:
+                        new_defs = set(step.out_var)
+            elif type(step) is Delete:
+                if step.args is not None:
+                    rm_defs = set([a for a in step.args])
+            elif type(step) is VariablesDict:
+                if step.kw is not None:
+                    new_defs = set([a for a, _ in step.kw.items()])
+                    
+            new_deps = set(step.get_dependencies())
+
+            accum_deps = accum_deps | new_deps
+            res.append({
+                'required_vars': new_deps,
+                'unresolved_vars': new_deps - defs,
+                'unresolved_vars_accum': accum_deps,
+                'env_vars': copy(defs),
+                'removed_vars': rm_defs,
+                'added_vars': new_defs,
+                'steptype': step.__steptype__,
+                'arg_cat': step.arg_cat,
+                'tags': step.tags,
+            })
+            defs.update(new_defs)
+            defs -= rm_defs
+        return res
+
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
         Rename parameters in the function call for all steps in the pipeline.
@@ -109,6 +156,8 @@ class _Pipeline:
             return res
         elif type(index) is list:
             return [self.__steps[i] for i in index]
+        elif isinstance(index, slice):
+            return self.__steps[index]
         else:
             assert type(index) is int
             if index < 0 or index >= len(self.__steps):
@@ -126,6 +175,8 @@ class _Pipeline:
         elif type(index) is list:
             for n in index:
                 del self.__steps[n]
+        elif isinstance(index, slice):
+            del self.__steps[index]
         else:
             assert type(index) is int
             if index < 0 or index >= len(self.__steps):
@@ -144,6 +195,8 @@ class _Pipeline:
         elif type(index) is list:
             for n in index:
                 self.__steps[n] = step
+        elif isinstance(index, slice):
+            self.__steps[index] = step
         else:
             raise NotImplementedError
     
@@ -314,7 +367,7 @@ class Pipeline(_Pipeline):
         self.add_function(
             a=Function(
                 lambda : [import_module(n) for n in names], out_var=aliases,
-                tags={'import_lib'}|tags,
+                tags=sl.tags.STEP_IMPORT_LIB|tags,
             ),
             index=index,
         )

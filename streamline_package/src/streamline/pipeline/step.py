@@ -25,7 +25,7 @@ class Var:
 
 class _Step:
     __version__ = __version__
-    __stepname__ = 'Step'
+    __steptype__ = 'Step'
     def __init__(
             self,
             args: Optional[List[str]]=None,
@@ -60,13 +60,29 @@ class _Step:
     
     def __repr__(self):
         if self.tags is not None:
-            return f'{self.__stepname__}(arg_cat={repr(self.arg_cat)}, tags={self.tags})'
+            return f'{self.__steptype__}(arg_cat={repr(self.arg_cat)}, tags={self.tags})'
         else:
-            return f'{self.__stepname__}(arg_cat={repr(self.arg_cat)})'
+            return f'{self.__steptype__}(arg_cat={repr(self.arg_cat)})'
     
     def __sourcecode__(self, create_call: Optional[bool]=False):
         assert not create_call, 'Not implemented'
         return inspect.getsource(self._fun)
+    
+    def get_dependencies(self):
+        """
+        Get the dependencies of the step. This is a list of variable names
+        that are used in the step's args and kw.
+        :return: A list of variable names.
+        :rtype: list
+        """
+        dependencies = set()
+        for a in self._args:
+            if isinstance(a, Var):
+                dependencies.add(a.name)
+        for k, v in self._kw.items():
+            if isinstance(v, Var):
+                dependencies.add(v.name)
+        return list(dependencies)
 
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
@@ -110,6 +126,10 @@ class _Step:
         return self._arg_cat
         
     @property
+    def args(self):
+        return self._args
+        
+    @property
     def kw(self):
         return self._kw
         
@@ -126,7 +146,7 @@ class _Step:
 
 
 class Function(_Step):
-    __stepname__ = 'Function'
+    __steptype__ = 'Function'
     def __init__(
             self,
 
@@ -148,6 +168,10 @@ class Function(_Step):
 
         self._out_var = out_var
 
+    @property
+    def out_var(self):
+        return self._out_var
+
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
         Rename parameters in the function call.
@@ -156,7 +180,7 @@ class Function(_Step):
         if variables is not None:
             assert type(variables) is dict or callable, 'variables must be a dict or callable'
             if type(variables) is dict:
-                fun = lambda x: variables(x)
+                fun = lambda x: variables.get(x, x)
             else:
                 fun = variables
             if isinstance(self._out_var, str):
@@ -172,6 +196,7 @@ class Function(_Step):
     def __call__(self, env, kw: Dict):
         def cvar(v):
             if isinstance(v, Var):
+                assert v.name in env, f'Variable {v.name} not found in environment'
                 return env[v.name]
             return v
         args = [cvar(a) for a in self._args]
@@ -194,7 +219,7 @@ class Function(_Step):
 
 
 class Delete(_Step):
-    __stepname__ = 'Delete'
+    __steptype__ = 'Delete'
     def __init__(
             self,
 
@@ -210,6 +235,20 @@ class Delete(_Step):
         super().__init__(args=args, arg_cat=arg_cat, tags=sl.tags.STEP_DELETE|tags)
         assert all([type(a) is str or isinstance(a, Var) for a in args]), 'All args must be strings'
 
+    def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
+        """
+        Rename parameters in the function call.
+        """
+        super().rename(variables=variables, arg_cat=arg_cat)
+        if variables is not None:
+            assert type(variables) is dict or callable, 'variables must be a dict or callable'
+            if type(variables) is dict:
+                fun = lambda x: variables.get(x, x)
+            else:
+                fun = variables
+            self._args = [fun(k.name) if isinstance(k, Var) else fun(k) for k in self._args]
+        return self
+    
     def __call__(self, env, kw: Dict):
         for a in self._args:
             if isinstance(a, Var):
@@ -220,7 +259,7 @@ class Delete(_Step):
     
 
 class VariablesDict(_Step):
-    __stepname__ = 'Function'
+    __steptype__ = 'Function'
     def __init__(
             self,
             
@@ -244,3 +283,17 @@ class VariablesDict(_Step):
         for a, b in kwargs.items():
             env[a] = cvar(b)
         return None
+
+    def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
+        """
+        Rename parameters in the function call.
+        """
+        super().rename(variables=variables, arg_cat=arg_cat)
+        if variables is not None:
+            assert type(variables) is dict or callable, 'variables must be a dict or callable'
+            if type(variables) is dict:
+                fun = lambda x: variables.get(x, x)
+            else:
+                fun = variables
+            self._kw = {fun(k): v for k, v in self._kw.items()}
+        return self

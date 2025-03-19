@@ -149,7 +149,169 @@ class TestStringMethods(unittest.TestCase):
         env = pipe.run({'d': 5})
         self.assertEqual(env['a'], 1)
         self.assertEqual(env['b'], 5)
+    
+    def test_env_info(self):
+        pipe = Pipeline([
+            Function(lambda : 3, arg_cat='s')
+        ]).add_step(
+            step=Function(
+                fun=lambda x, s, e, f, h: (x**2+1, s, e, f, h),
+                args=Var('a'),
+                kw={'e': Var('a'), 'f': 8, 'h': 5},
+                out_var=('b', 'c', 'e', 'f', 'h'),
+                arg_cat='f',
+            )
+        ).add_import_lib(
+            {'numpy': 'np', 'pandas': 'pd'},
+            index=0
+        ).add_step(
+            Function(np.random.rand, out_var='r')
+        ).add_delete(
+            ['f', 'h', 'a']  # remove variables 'f' and 'h'
+        ).add_variables_dict({
+            'j': '3'
+        })
         
+        env_info = pipe.get_env_info()
+        res_env_info = [
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': set(),
+            'env_vars': set(),
+            'removed_vars': set(),
+            'added_vars': {'np', 'pd'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'function', 'import_lib'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': set(),
+            'env_vars': {'np', 'pd'},
+            'removed_vars': set(),
+            'added_vars': set(),
+            'steptype': 'Function',
+            'arg_cat': 's',
+            'tags': {'function'}},
+            {'required_vars': {'a'},
+            'unresolved_vars': {'a'},
+            'unresolved_vars_accum': {'a'},
+            'env_vars': {'np', 'pd'},
+            'removed_vars': set(),
+            'added_vars': {'b', 'c', 'e', 'f', 'h'},
+            'steptype': 'Function',
+            'arg_cat': 'f',
+            'tags': {'function'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'a'},
+            'env_vars': {'b', 'c', 'e', 'f', 'h', 'np', 'pd'},
+            'removed_vars': set(),
+            'added_vars': {'r'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'function'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'a'},
+            'env_vars': {'b', 'c', 'e', 'f', 'h', 'np', 'pd', 'r'},
+            'removed_vars': {'a', 'f', 'h'},
+            'added_vars': set(),
+            'steptype': 'Delete',
+            'arg_cat': '',
+            'tags': {'delete'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'a'},
+            'env_vars': {'b', 'c', 'e', 'np', 'pd', 'r'},
+            'removed_vars': set(),
+            'added_vars': {'j'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'add_variables'}}
+        ]
+        assert env_info == res_env_info
+
+        pipe4 = pipe.copy()
+        pipe4.rename(lambda x: 'pipe4_'+x)
+        pipe4.get_env_info()
+
+        env_info4 = pipe4.get_env_info()
+        res_env_info4 = [
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': set(),
+            'env_vars': set(),
+            'removed_vars': set(),
+            'added_vars': {'pipe4_np', 'pipe4_pd'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'function', 'import_lib'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': set(),
+            'env_vars': {'pipe4_np', 'pipe4_pd'},
+            'removed_vars': set(),
+            'added_vars': set(),
+            'steptype': 'Function',
+            'arg_cat': 's',
+            'tags': {'function'}},
+            {'required_vars': {'pipe4_a'},
+            'unresolved_vars': {'pipe4_a'},
+            'unresolved_vars_accum': {'pipe4_a'},
+            'env_vars': {'pipe4_np', 'pipe4_pd'},
+            'removed_vars': set(),
+            'added_vars': {'pipe4_b', 'pipe4_c', 'pipe4_e', 'pipe4_f', 'pipe4_h'},
+            'steptype': 'Function',
+            'arg_cat': 'f',
+            'tags': {'function'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'pipe4_a'},
+            'env_vars': {'pipe4_b',
+            'pipe4_c',
+            'pipe4_e',
+            'pipe4_f',
+            'pipe4_h',
+            'pipe4_np',
+            'pipe4_pd'},
+            'removed_vars': set(),
+            'added_vars': {'pipe4_r'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'function'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'pipe4_a'},
+            'env_vars': {'pipe4_b',
+            'pipe4_c',
+            'pipe4_e',
+            'pipe4_f',
+            'pipe4_h',
+            'pipe4_np',
+            'pipe4_pd',
+            'pipe4_r'},
+            'removed_vars': {'pipe4_a', 'pipe4_f', 'pipe4_h'},
+            'added_vars': set(),
+            'steptype': 'Delete',
+            'arg_cat': '',
+            'tags': {'delete'}},
+            {'required_vars': set(),
+            'unresolved_vars': set(),
+            'unresolved_vars_accum': {'pipe4_a'},
+            'env_vars': {'pipe4_b',
+            'pipe4_c',
+            'pipe4_e',
+            'pipe4_np',
+            'pipe4_pd',
+            'pipe4_r'},
+            'removed_vars': set(),
+            'added_vars': {'pipe4_j'},
+            'steptype': 'Function',
+            'arg_cat': '',
+            'tags': {'add_variables'}}
+        ]
+        self.assertEqual(env_info4, res_env_info4)
+
 
 class TestPipeline(unittest.TestCase):
     def setUp(self):

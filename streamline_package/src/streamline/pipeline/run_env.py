@@ -6,7 +6,6 @@ from .step import _Step
 
 from typing import Optional, Dict, List, Any
 import pandas as pd
-import json
 import os
 
 
@@ -44,6 +43,19 @@ class RunEnv:
 
     def __setitem__(self, key, obj):
         self._env[key] = obj
+
+    def __copy__(self):
+        return RunEnv(env=self._env.copy())
+    
+    def __deepcopy__(self, memo):
+        from copy import deepcopy
+        return RunEnv(env=deepcopy(self._env, memo=memo))
+    
+    def copy(self, deep: bool=False):
+        if deep:
+            return self.__copy__()
+        else:
+            return self.__deepcopy__(memo={})
 
     def keys(self):
         return self._env.keys()
@@ -134,7 +146,6 @@ class RunEnv:
 
 
 def load_runenv(path_folder: str):
-    path_folder_dedicated = os.path.join(path_folder, 'dedicated')
     path_env = os.path.join(path_folder, 'env.dill')
     path_info = os.path.join(path_folder, 'info.json')
     

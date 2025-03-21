@@ -51,6 +51,22 @@ class _Pipeline:
             assert all((isinstance(step, _Step) for step in a))
         self.__steps = a
 
+    def __copy__(self):
+        return self.__class__(
+            a=copy([copy(step) for step in self.__steps])
+        )
+
+    def __deepcopy__(self, memo):
+        return self.__class__(
+            a=deepcopy(self.__steps)
+        )
+
+    def copy(self, deep: Optional[bool]=False):
+        if deep:
+            return deepcopy(self)
+        else:
+            return copy(self)
+
     def print(self, show_args: Optional[bool]=False):
         res = 'Pipeline(steps=['
         if show_args:
@@ -77,6 +93,10 @@ class _Pipeline:
     def __iter__(self):
         return iter(self.__steps)
     
+    def save(self, path: str):
+        sl.utilities.save_obj(self, path=path)
+        return self
+
     def get_env_info(self):
         """
         Get all dependencies for all steps in the pipeline.
@@ -250,22 +270,6 @@ class Pipeline(_Pipeline):
         ):
         super().__init__(a=a)
         self._loc = _Loc(self)
-
-    def __copy__(self):
-        return Pipeline(
-            a=copy([copy(step) for step in self.__steps])
-        )
-
-    def __deepcopy__(self, memo):
-        return Pipeline(
-            a=deepcopy(self.__steps)
-        )
-
-    def copy(self, deep: Optional[bool]=False):
-        if deep:
-            return deepcopy(self)
-        else:
-            return copy(self)
         
     @property
     def loc(self):
@@ -373,7 +377,11 @@ class Pipeline(_Pipeline):
         )
         return self
 
-    def run(self, env=None, kw: Optional[Dict]=None):
+    def _run(self, env: Optional[Dict]=None, kw: Optional[Dict]=None):
+        """
+        Run the pipeline with the given environment and keyword arguments.
+        This method yields the output of each step along with the updated environment.
+        """
         if env is None or type(env) is dict:
             env = sl.RunEnv(env=env)
         if kw is None:
@@ -390,8 +398,20 @@ class Pipeline(_Pipeline):
                     if a.startswith(arg_cat+'_')
                 }
             kw_new = step.kw|kw_filt
-            step(env=env, kw=kw_new)
+            out = step(env=env, kw=kw_new)
             env._add_step(step=step, kwargs=kw_filt)
+            yield out, env
+        return env
+
+    def run(self, env: Optional[Dict]=None, kw: Optional[Dict]=None):
+        """
+        Run the pipeline with the given environment and keyword arguments.
+        """
+        if env is None or type(env) is dict:
+            env = sl.RunEnv(env=env)
+        iterator = self._run(env=env, kw=kw)
+        for _, env in iterator:
+            pass
         return env
 
     def run_parallel(self, env_l: List=None, kw_l: Optional[List[Dict]]=None):
@@ -430,6 +450,74 @@ class Pipeline(_Pipeline):
             return [res_l[i:i+n] for i in range(0, m*n, n)]
 
 
+class DebugPipeline:
+    # TODO: finish class
+    """
+    DebugPipeline is a subclass of Pipeline that is used for debugging purposes.
+    It allows you to run the pipeline and inspect the environment at each step.
+    """
+    def __init__(self, a: Optional[List[Tuple]]=None, env: Optional[List[Tuple]]=None, start: Optional[int]=0):
+        """
+        Initialize the DebugPipeline with an optional list of steps and an environment.
+        """
+        if env is None:
+            env = sl.RunEnv()
+        self._pipeline = Pipeline(a=a)
+        self._env = env
+        self._run_step = start
+    
+    def reset_run(self, start: Optional[int]=0):
+        """
+        Reset the current step to 0.
+        """
+        self._run_step = start
+
+    def reset_env(self):
+        """
+        Reset the environment to an empty dictionary.
+        """
+        self._env = sl.RunEnv()
+        return self._env
+    
+    def reset(self):
+        """
+        Reset the pipeline and environment to their initial states.
+        """
+        self.reset_step()
+        self.reset_env()
+        return self._env
+    
+    def run(self, kw: Optional[Dict]=None):
+        """
+        Run the pipeline from the current step
+        """
+        self.reset()
+        self._pipeline.run(env=self._env, kw=kw)
+        self._run_step = len(self._pipeline)
+        return self._env
+        
+    def resume(self, kw: Optional[Dict]=None):
+        """
+        Run the pipeline with the given keyword arguments.
+        """
+        l = len(self._pipeline)
+        self._pipeline[self._run_step:].run(env=self._env, kw=kw)
+        self._run_step = l
+        return self._env
+    
+    def sim_resume(self, a=None, kw: Optional[Dict]=None):
+        """
+        Simulate the run of the pipeline without modifying the environment.
+        """
+        if a is None:
+            pipe = self._pipeline[self._run_step:]
+        else:
+            pipe = Pipeline(a=a)
+        env = self._env.copy()
+        pipe.run(env=env, kw=kw)
+        return env
+
+
 def run_parallel(runs: List[Tuple]):
     import ray
     exec_l = []
@@ -443,7 +531,10 @@ def run_parallel(runs: List[Tuple]):
 
 def concat(list_pipes: List):
     steps = []
-    kwargs = dict()
     for pipe in list_pipes:
         steps.extend(pipe._Pipeline__steps)
     return Pipeline(a=steps)
+
+
+def load_pipeline(path: str):
+    return sl.utilities.load_obj(path=path)

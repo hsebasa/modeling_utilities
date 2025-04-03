@@ -15,33 +15,106 @@ from copy import copy, deepcopy
 
 
 class StepNotFound(Exception):
+    """
+    Exception raised when a step is not found in a pipeline.
+    
+    This exception is raised when attempting to access, modify, or remove
+    a step that does not exist in the pipeline.
+    """
     pass
 
 
 class _Vertical:
+    """
+    Class for representing boolean masks for pipeline steps.
+    
+    This class is used internally to represent a mask of boolean values
+    corresponding to steps in a pipeline. It is used for filtering and
+    selecting steps based on conditions.
+    """
     def __init__(self, filt: List):
+        """
+        Initialize a _Vertical with a list of boolean values.
+        
+        Parameters
+        ----------
+        filt : List
+            List of boolean values representing a mask
+        """
         self._filt = filt
 
     @property
     def filt(self):
+        """
+        Get the filter mask.
+        
+        Returns
+        -------
+        list
+            The list of boolean values
+        """
         return self._filt
 
     def __repr__(self):
+        """
+        Get string representation of the _Vertical.
+        
+        Returns
+        -------
+        str
+            String representation of the filter mask
+        """
         return repr(self._filt)
 
     def __len__(self):
+        """
+        Get the length of the filter mask.
+        
+        Returns
+        -------
+        int
+            The number of elements in the filter mask
+        """
         return len(self._filt)
         
     def __iter__(self):
+        """
+        Get an iterator over the filter mask.
+        
+        Returns
+        -------
+        iterator
+            Iterator over the boolean values
+        """
         return iter(self._filt)
 
         
 class _Pipeline:
+    """
+    Base class for Pipeline implementations.
+    
+    This class provides the core functionality for managing a sequence of
+    steps and executing them. It is not intended to be used directly;
+    instead, use the Pipeline class, which inherits from this class.
+    """
     __version__ = __version__
     def __init__(
             self,
             a: Optional[List[_Step]]=None,
         ):
+        """
+        Initialize a _Pipeline.
+        
+        Parameters
+        ----------
+        a : Optional[List[_Step]], default=None
+            List of steps to add to the pipeline
+            
+        Raises
+        ------
+        AssertionError
+            If any element in a is not a _Step instance
+        """
         if a is None:
             a = list()
         else:
@@ -52,22 +125,69 @@ class _Pipeline:
         self.__steps = a
 
     def __copy__(self):
+        """
+        Create a shallow copy of the pipeline.
+        
+        Returns
+        -------
+        _Pipeline
+            A new pipeline with shallow copies of the steps
+        """
         return self.__class__(
             a=copy([copy(step) for step in self.__steps])
         )
 
     def __deepcopy__(self, memo):
+        """
+        Create a deep copy of the pipeline.
+        
+        Parameters
+        ----------
+        memo : dict
+            Dictionary for memoization
+            
+        Returns
+        -------
+        _Pipeline
+            A new pipeline with deep copies of the steps
+        """
         return self.__class__(
             a=deepcopy(self.__steps)
         )
 
     def copy(self, deep: Optional[bool]=False):
+        """
+        Create a copy of the pipeline.
+        
+        Parameters
+        ----------
+        deep : Optional[bool], default=False
+            Whether to create a deep copy
+            
+        Returns
+        -------
+        _Pipeline
+            A copy of the pipeline
+        """
         if deep:
             return deepcopy(self)
         else:
             return copy(self)
 
     def print(self, show_args: Optional[bool]=False):
+        """
+        Get a string representation of the pipeline.
+        
+        Parameters
+        ----------
+        show_args : Optional[bool], default=False
+            Whether to show the arguments of each step
+            
+        Returns
+        -------
+        str
+            String representation of the pipeline
+        """
         res = 'Pipeline(steps=['
         if show_args:
             res = res + ', '.join([f'\n  {step}' for step in self.__steps])
@@ -79,21 +199,74 @@ class _Pipeline:
         return res
 
     def __repr__(self):
+        """
+        Get string representation of the pipeline.
+        
+        Returns
+        -------
+        str
+            String representation of the pipeline
+        """
         return self.print(show_args=True)
 
     def items(self):
+        """
+        Get an iterator over the steps in the pipeline.
+        
+        Returns
+        -------
+        iterator
+            Iterator over the steps
+        """
         return iter(self.__steps)
         
     def to_list(self):
+        """
+        Get a list of the steps in the pipeline.
+        
+        Returns
+        -------
+        list
+            List of the steps
+        """
         return list(self.items())
 
     def __len__(self):
+        """
+        Get the number of steps in the pipeline.
+        
+        Returns
+        -------
+        int
+            The number of steps
+        """
         return len(self.__steps)
     
     def __iter__(self):
+        """
+        Get an iterator over the steps in the pipeline.
+        
+        Returns
+        -------
+        iterator
+            Iterator over the steps
+        """
         return iter(self.__steps)
     
     def save(self, path: str):
+        """
+        Save the pipeline to a file.
+        
+        Parameters
+        ----------
+        path : str
+            Path to save the pipeline to
+            
+        Returns
+        -------
+        _Pipeline
+            Self, for method chaining
+        """
         sl.utilities.save_obj(self, path=path)
         return self
 
@@ -264,18 +437,54 @@ class _Loc:
 
 
 class Pipeline(_Pipeline):
+    """
+    Main pipeline class for executing a sequence of steps.
+    
+    A Pipeline is a container for a sequence of steps that can be executed in order.
+    It provides methods for adding, removing, and modifying steps, as well as
+    running the pipeline on a given environment.
+    """
     def __init__(
             self,
             a: Optional[List[Tuple]]=None,
         ):
+        """
+        Initialize a Pipeline.
+        
+        Parameters
+        ----------
+        a : Optional[List[Tuple]], default=None
+            List of steps to add to the pipeline
+        """
         super().__init__(a=a)
         self._loc = _Loc(self)
         
     @property
     def loc(self):
+        """
+        Get a _Loc object for accessing steps by boolean indexing.
+        
+        Returns
+        -------
+        _Loc
+            Accessor for the pipeline's steps
+        """
         return self._loc
 
     def __add__(self, other):
+        """
+        Concatenate two pipelines.
+        
+        Parameters
+        ----------
+        other : Pipeline
+            The pipeline to concatenate with this one
+            
+        Returns
+        -------
+        Pipeline
+            A new pipeline containing all steps from both pipelines
+        """
         assert isinstance(other, Pipeline)
         return concat([self, other])
         
@@ -284,6 +493,22 @@ class Pipeline(_Pipeline):
             step: Union[Function, Delete, VariablesDict],
             index: Optional[int]=None,
         ):
+        """
+        Add a step to the pipeline.
+        
+        Parameters
+        ----------
+        step : Union[Function, Delete, VariablesDict]
+            The step to add
+        index : Optional[int], default=None
+            The index at which to insert the step.
+            If None, the step is appended to the end.
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+        """
         assert isinstance(step, (Function, Delete, VariablesDict)), type(step)
         self._add_step(index=index, step=step)
         return self
@@ -301,6 +526,31 @@ class Pipeline(_Pipeline):
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
+        """
+        Add a function step to the pipeline.
+        
+        Parameters
+        ----------
+        a : Union[Function, Callable]
+            The function or Function step to add
+        index : Optional[int], default=None
+            The index at which to insert the step
+        args : Optional[List[str]], default=None
+            List of positional arguments or Var references
+        kw : Optional[Dict], default=None
+            Dictionary of keyword arguments
+        out_var : Optional[Union[str, Tuple[str]]], default=None
+            Name of the variable(s) to store the function's output
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+        """
         assert isinstance(a, (Function, Callable)), type(a)
         if isinstance(a, Function):
             assert arg_cat is None and tags is None and out_var is None
@@ -319,6 +569,25 @@ class Pipeline(_Pipeline):
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
+        """
+        Add a delete step to the pipeline.
+        
+        Parameters
+        ----------
+        a : Union[Delete, str, List[str]]
+            The variables to delete or a Delete step
+        index : Optional[int], default=None
+            The index at which to insert the step
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+        """
         assert isinstance(a, (Delete, str, list)), type(a)
         if isinstance(a, Delete):
             assert arg_cat is None and tags is None
@@ -336,6 +605,25 @@ class Pipeline(_Pipeline):
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
+        """
+        Add a variables dictionary step to the pipeline.
+        
+        Parameters
+        ----------
+        a : Union[VariablesDict, Dict]
+            The variables to add or a VariablesDict step
+        index : Optional[int], default=None
+            The index at which to insert the step
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+        """
         assert isinstance(a, (VariablesDict, Dict)), type(a)
         if isinstance(a, VariablesDict):
             assert arg_cat is None and tags is None
@@ -352,6 +640,26 @@ class Pipeline(_Pipeline):
             index: Optional[int]=None,
             tags: Optional[Set[str]]=None,
         ):
+        """
+        Add an import library step to the pipeline.
+        
+        Parameters
+        ----------
+        a : Union[Dict, str]
+            The library to import. If a string, imports a single library.
+            If a dictionary, keys are library names and values are aliases.
+        alias : Optional[str], default=None
+            The alias for the imported library (only used if a is a string)
+        index : Optional[int], default=None
+            The index at which to insert the step
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+        """
         if tags is None:
             tags = set()
             
@@ -379,8 +687,23 @@ class Pipeline(_Pipeline):
 
     def _run(self, env: Optional[Dict]=None, kw: Optional[Dict]=None):
         """
-        Run the pipeline with the given environment and keyword arguments.
-        This method yields the output of each step along with the updated environment.
+        Internal method to run the pipeline on a given environment.
+        
+        Parameters
+        ----------
+        env : Optional[Dict], default=None
+            The environment to use for execution
+        kw : Optional[Dict], default=None
+            Additional keyword arguments
+            
+        Returns
+        -------
+        Dict
+            The environment after executing all steps
+            
+        Notes
+        -----
+        This method modifies the environment in place.
         """
         if env is None or type(env) is dict:
             env = sl.RunEnv(env=env)
@@ -405,7 +728,19 @@ class Pipeline(_Pipeline):
 
     def run(self, env: Optional[Dict]=None, kw: Optional[Dict]=None):
         """
-        Run the pipeline with the given environment and keyword arguments.
+        Run the pipeline on a given environment.
+        
+        Parameters
+        ----------
+        env : Optional[Dict], default=None
+            The environment to use for execution
+        kw : Optional[Dict], default=None
+            Additional keyword arguments
+            
+        Returns
+        -------
+        Dict
+            The environment after executing all steps
         """
         if env is None or type(env) is dict:
             env = sl.RunEnv(env=env)
@@ -415,6 +750,21 @@ class Pipeline(_Pipeline):
         return env
 
     def run_parallel(self, env_l: List=None, kw_l: Optional[List[Dict]]=None):
+        """
+        Run the pipeline on multiple environments in parallel.
+        
+        Parameters
+        ----------
+        env_l : List, default=None
+            List of environments to use for execution
+        kw_l : Optional[List[Dict]], default=None
+            List of additional keyword arguments, one for each environment
+            
+        Returns
+        -------
+        List
+            List of environments after executing all steps
+        """
         import ray
         if env_l is None:
             m = 0
@@ -530,11 +880,36 @@ def run_parallel(runs: List[Tuple]):
     
 
 def concat(list_pipes: List):
-    steps = []
-    for pipe in list_pipes:
-        steps.extend(pipe._Pipeline__steps)
+    """
+    Concatenate multiple pipelines into a single pipeline.
+    
+    Parameters
+    ----------
+    list_pipes : List
+        List of pipelines to concatenate
+        
+    Returns
+    -------
+    Pipeline
+        A new pipeline containing all steps from all input pipelines
+    """
+    assert len(list_pipes) > 0, 'list_pipes must have at least one element'
+    steps = sum([pipe._Pipeline__steps for pipe in list_pipes], [])
     return Pipeline(a=steps)
 
 
 def load_pipeline(path: str):
+    """
+    Load a pipeline from a file.
+    
+    Parameters
+    ----------
+    path : str
+        Path to load the pipeline from
+        
+    Returns
+    -------
+    Pipeline
+        The loaded pipeline
+    """
     return sl.utilities.load_obj(path=path)

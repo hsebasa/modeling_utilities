@@ -2,6 +2,7 @@ from streamline import __version__
 from typing import Optional, Callable, Dict, Set, List, Union, Tuple
 import streamline as sl
 import inspect
+from importlib import import_module
 
 
 class Var:
@@ -204,6 +205,36 @@ class _Step:
             if isinstance(v, Var):
                 dependencies.add(v.name)
         return list(dependencies)
+    
+    def get_outputs(self):
+        """
+        Get the outputs of the step.
+        
+        This method should be implemented by subclasses to return
+        the variable names that are created or modified by this step.
+        
+        Returns
+        -------
+        set
+            A set of variable names that this step outputs
+        """
+        raise NotImplementedError('Subclasses must implement get_outputs method')
+
+    def has_tag(self, tag: str) -> bool:
+        """
+        Check if this step has the specified tag.
+        
+        Parameters
+        ----------
+        tag : str
+            The tag to check for
+            
+        Returns
+        -------
+        bool
+            True if the step has the specified tag, False otherwise
+        """
+        return tag in self._tags
 
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
@@ -239,16 +270,18 @@ class _Step:
                 fun = variables
             self._args = [Var(fun(a.name)) if isinstance(a, Var) else a for a in self._args]
             self._kw = {
-                k: Var(fun(v.name)) if isinstance(v, Var) else v
+                Var(fun(k.name)) if isinstance(k, Var) else k: Var(fun(v.name)) if isinstance(v, Var) else v
                 for k, v in self._kw.items()
             }
         if arg_cat is not None:
             assert type(arg_cat) is dict or callable or str, 'arg_cat must be a dict or callable'
             if type(arg_cat) is dict:
-                arg_cat = lambda x: arg_cat.get(x, x)
+                fun = lambda x: arg_cat.get(x, x)
             elif type(arg_cat) is str:
-                arg_cat = lambda x: arg_cat
-            self._arg_cat = arg_cat(self._arg_cat)
+                fun = lambda x: arg_cat
+            else:
+                fun = arg_cat
+            self._arg_cat = fun(self._arg_cat)
         return self
     
     @property
@@ -390,6 +423,23 @@ class Function(_Step):
             Name(s) of the variable(s) to store the function's output
         """
         return self._out_var
+    
+    def get_outputs(self):
+        """
+        Get the outputs of the function step.
+        
+        Returns
+        -------
+        set
+            A set of variable names that this step outputs
+        """
+        out_var = self._out_var
+        if out_var is None:
+            return {'_'}
+        elif isinstance(out_var, str):
+            return {out_var}
+        else:
+            return set(out_var)
 
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
@@ -523,6 +573,20 @@ class Delete(_Step):
             tags = set()
         super().__init__(args=args, arg_cat=arg_cat, tags=sl.tags.STEP_DELETE|tags)
         assert all([type(a) is str or isinstance(a, Var) for a in args]), 'All args must be strings'
+    
+    def get_outputs(self):
+        """
+        Get the outputs of the delete step.
+        
+        Since this step removes variables rather than creating them,
+        it doesn't have any outputs in the typical sense.
+        
+        Returns
+        -------
+        set
+            An empty set since this step doesn't produce any outputs
+        """
+        return set()
 
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
@@ -549,14 +613,14 @@ class Delete(_Step):
         AssertionError
             If variables is neither a dict nor callable
         """
-        super().rename(variables=variables, arg_cat=arg_cat)
+        super().rename(variables=None, arg_cat=arg_cat)
         if variables is not None:
             assert type(variables) is dict or callable, 'variables must be a dict or callable'
             if type(variables) is dict:
                 fun = lambda x: variables.get(x, x)
             else:
                 fun = variables
-            self._args = [fun(k.name) if isinstance(k, Var) else fun(k) for k in self._args]
+            self._args = [Var(fun(k.name)) if isinstance(k, Var) else fun(k) for k in self._args]
         return self
 
     def __call__(self, env, kw: Dict):
@@ -649,6 +713,17 @@ class VariablesDict(_Step):
             env[a] = cvar(b)
         return None
 
+    def get_outputs(self):
+        """
+        Get the outputs of the variables dictionary step.
+        
+        Returns
+        -------
+        set
+            A set of variable names that will be added to the environment
+        """
+        return set(self._kw.keys())
+    
     def rename(self, variables: Optional[Dict[str, str]]=None, arg_cat: Optional[str]=None):
         """
         Rename variables in the VariablesDict step.
@@ -674,7 +749,7 @@ class VariablesDict(_Step):
         AssertionError
             If variables is neither a dict nor callable
         """
-        super().rename(variables=variables, arg_cat=arg_cat)
+        super().rename(variables=None, arg_cat=arg_cat)
         if variables is not None:
             assert type(variables) is dict or callable, 'variables must be a dict or callable'
             if type(variables) is dict:
@@ -683,3 +758,161 @@ class VariablesDict(_Step):
                 fun = variables
             self._kw = {fun(k): v for k, v in self._kw.items()}
         return self
+
+
+class ImportLib(_Step):
+    """
+    A pipeline step that imports a Python module.
+    
+    This step imports a Python module and makes it available in the
+    environment with a specified variable name. It is useful for
+    importing libraries that will be used by subsequent steps.
+    """
+    __steptype__ = 'ImportLib'
+    def __init__(
+            self,
+            module_name: str,
+            var_name: Optional[str]=None,
+            arg_cat: Optional[str]=None,
+            tags: Optional[Set[str]]=None,
+        ):
+        """
+        Initialize an ImportLib step.
+        
+        Parameters
+        ----------
+        module_name : str
+            The name of the module to import
+        var_name : Optional[str], default=None
+            The variable name to use for the imported module.
+            If None, uses the module name.
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step
+            
+        Raises
+        ------
+        AssertionError
+            If module_name is not a string
+        """
+        assert isinstance(module_name, str), 'module_name must be a string'
+        var_name = var_name or module_name
+
+        if tags is None:
+            tags = set()
+        super().__init__(
+            kw={Var(var_name): module_name},
+            arg_cat=arg_cat, tags=sl.tags.STEP_IMPORT_LIB|tags
+        )
+    
+    @property   
+    def _module_name(self):
+        """
+        Get the module name.
+        
+        Returns
+        -------
+        str
+            The name of the module to import
+        """
+        return list(self._kw.values())[0]
+    
+    @property   
+    def _var_name(self):
+        """
+        Get the variable name.
+        
+        Returns
+        -------
+        str
+            The name of the variable to store the module
+        """
+        return list(self._kw.keys())[0].name
+    
+    @property
+    def module_name(self):
+        """
+        Get the module name.
+        
+        Returns
+        -------
+        str
+            The name of the module to import
+        """
+        return self._module_name
+    
+    @property
+    def var_name(self):
+        """
+        Get the variable name.
+        
+        Returns
+        -------
+        str
+            The variable name for the imported module
+        """
+        return self._var_name
+    
+    def __repr__(self):
+        """
+        Get string representation of the ImportLib step.
+        
+        Returns
+        -------
+        str
+            String representation showing module_name and var_name
+        """
+        return f"{self.__steptype__}(module_name={repr(self._module_name)}, var_name={repr(self._var_name)}, arg_cat={repr(self.arg_cat)}, tags={self.tags})"
+    
+    def __call__(self, env, kw: Dict):
+        """
+        Execute the import operation on the given environment.
+        
+        Imports the specified module and adds it to the environment.
+        
+        Parameters
+        ----------
+        env : dict
+            The environment dictionary containing variables
+        kw : Dict
+            Additional keyword arguments (not used in this step)
+            
+        Returns
+        -------
+        module
+            The imported module
+            
+        Raises
+        ------
+        ModuleNotFoundError
+            If the specified module cannot be imported
+        """
+        module = import_module(self._module_name)
+        env[self._var_name] = module
+        return module
+    
+    
+    def get_outputs(self):
+        """
+        Get the outputs of the step.
+        
+        Returns
+        -------
+        set
+            A set containing the variable name of the imported module
+        """
+        return {self._var_name}
+    
+    def get_dependencies(self):
+        """
+        Get the dependencies of the step.
+        
+        ImportLib steps have no dependencies.
+        
+        Returns
+        -------
+        set
+            An empty set
+        """
+        return set()

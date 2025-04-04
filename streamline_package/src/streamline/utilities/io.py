@@ -116,7 +116,7 @@ def save_pandas_df(df: pd.DataFrame, path: str, format: Optional[str]='parquet',
     """
     assert format in {'parquet', 'csv'}
     kwargs = {'index': False}|kwargs
-    if not path.endswith(format):
+    if not path.endswith('.'+format):
         path = path+'.'+format
     if format == 'parquet':
         df.to_parquet(path, **kwargs)
@@ -149,7 +149,7 @@ def load_pandas_df(path: str, format: Optional[str]='parquet'):
         If format is not one of 'parquet' or 'csv'
     """
     assert format in {'parquet', 'csv'}
-    if not path.endswith(format):
+    if not path.endswith('.'+format):
         path = path+'.'+format
     if format == 'parquet':
         df = pd.read_parquet(path)

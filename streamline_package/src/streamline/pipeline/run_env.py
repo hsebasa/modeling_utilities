@@ -142,7 +142,20 @@ class RunEnv:
             If the key is not in the RunEnv
         """
         del self._env[key]
-
+    
+    def get(self, key, default=None):
+        """
+        Get a value from the RunEnv.
+        
+        Parameters
+        ----------
+        key : str
+            The key to get
+        default : Any, default=None
+            The value to return if the key is not in the RunEnv
+        """
+        return self._env.get(key, default)
+    
     def __setitem__(self, key, obj):
         """
         Set a value in the RunEnv.
@@ -199,9 +212,9 @@ class RunEnv:
             A copy of the RunEnv
         """
         if deep:
-            return self.__copy__()
-        else:
             return self.__deepcopy__(memo={})
+        else:
+            return self.__copy__()
 
     def keys(self):
         """

@@ -7,7 +7,7 @@
 
 from streamline import __version__
 import streamline as sl
-from .step import _Step, Function, Delete, VariablesDict
+from .step import _Step, Function, Delete, VariablesDict, ImportLib
 
 from typing import List, Dict, Optional, Tuple, Union, Callable, Set
 from importlib import import_module
@@ -269,6 +269,92 @@ class _Pipeline:
         """
         sl.utilities.save_obj(self, path=path)
         return self
+        
+    @classmethod
+    def load(cls, path: str):
+        """
+        Load a pipeline from a file.
+        
+        Parameters
+        ----------
+        path : str
+            Path to load the pipeline from
+            
+        Returns
+        -------
+        _Pipeline
+            The loaded pipeline
+            
+        Notes
+        -----
+        This is a class method, so it can be called on the class directly,
+        e.g., `_Pipeline.load('path/to/file')`.
+        """
+        return sl.utilities.load_obj(path=path)
+        
+    def get_outputs(self):
+        """
+        Get all outputs from all steps in the pipeline.
+        
+        Returns
+        -------
+        set
+            Set of variable names that are outputs of the pipeline steps
+        """
+        # Get all outputs from all steps
+        all_outputs = set()
+        for step in self.__steps:
+            step_outputs = step.get_outputs()
+            all_outputs.update(step_outputs)
+            
+        return all_outputs
+        
+    def get_steps_by_input(self, input_name):
+        """
+        Get all steps that have a specific input dependency.
+        
+        Parameters
+        ----------
+        input_name : str
+            The name of the input variable to search for
+            
+        Returns
+        -------
+        list
+            List of steps that depend on the specified input variable
+        """
+        steps = []
+        for step in self.__steps:
+            step_deps = step.get_dependencies()
+            if isinstance(step_deps, list):
+                step_deps = set(step_deps)
+                
+            if input_name in step_deps:
+                steps.append(step)
+                
+        return steps
+        
+    def get_steps_by_output(self, output_name):
+        """
+        Get all steps that produce a specific output.
+        
+        Parameters
+        ----------
+        output_name : str
+            The name of the output variable to search for
+            
+        Returns
+        -------
+        list
+            List of steps that produce the specified output variable
+        """
+        steps = []
+        for step in self.__steps:
+            step_outputs = step.get_outputs()
+            if output_name in step_outputs:
+                steps.append(step)
+                
+        return steps
 
     def get_env_info(self):
         """
@@ -295,7 +381,7 @@ class _Pipeline:
                     
             new_deps = set(step.get_dependencies())
 
-            accum_deps = accum_deps | new_deps
+            accum_deps = accum_deps | (new_deps - defs)
             res.append({
                 'required_vars': new_deps,
                 'unresolved_vars': new_deps - defs,
@@ -318,12 +404,20 @@ class _Pipeline:
         for step in self.__steps:
             step.rename(variables=variables, arg_cat=arg_cat)
         return self
+    
+    def extend(self, steps: List[_Step]):
+        """
+        Extend the pipeline with a list of steps.
+        """
+        for step in steps:
+            self._add_step(step)
+        return self
 
     def _append(self, step: _Step):
         assert isinstance(step, _Step)
         self.__steps.append(step)
     
-    def apply(self, a, globals_=None):
+    def map(self, a, globals_=None):
         if isinstance(a, sl.Delayed):
             if globals_ is None:
                 globals_ = dict()
@@ -338,7 +432,10 @@ class _Pipeline:
         else:
             assert callable(a)
             return _Vertical([a(step) for step in self.__steps])
-        
+    
+    def apply(self, func: Callable):
+        return Pipeline(a=[func(step) for step in self.__steps])
+
     def _getitem(self, index):
         if type(index) is _Vertical:
             assert len(index) == len(self.__steps)
@@ -408,6 +505,219 @@ class _Pipeline:
             self._insert(index, step)
         return self
 
+    def get_dependencies(self):
+        """
+        Get all input dependencies for the pipeline.
+        
+        This method uses get_env_info to track all variables through the pipeline
+        and identifies which external variables are required as inputs.
+        
+        Returns
+        -------
+        set
+            Set of variable names that this pipeline depends on from outside
+        """
+        # Get environment information for all steps
+        env_info = self.get_env_info()
+        
+        # If there are no steps, return an empty set
+        if not env_info:
+            return set()
+            
+        # Get dependencies from the last step's information
+        # The 'unresolved_vars_accum' field contains all variables that haven't been
+        # resolved (defined) within the pipeline
+        last_step_info = env_info[-1]
+        external_deps = last_step_info['unresolved_vars_accum']
+        
+        return external_deps
+
+    def get_steps_by_tag(self, tag):
+        """
+        Get all steps that have a specific tag.
+        
+        Parameters
+        ----------
+        tag : str
+            The tag to search for
+            
+        Returns
+        -------
+        list
+            List of steps that have the specified tag
+        """
+        steps = []
+        for step in self.__steps:
+            if hasattr(step, 'has_tag') and step.has_tag(tag):
+                steps.append(step)
+                
+        return steps
+
+    def get_subgraph(self, inputs=None, outputs=None):
+        """
+        Extract a subgraph of the pipeline based on specified inputs and outputs.
+        
+        This method identifies all steps that form a path from the specified 
+        input variables to the specified output variables, creating a new pipeline
+        containing only those steps.
+        
+        Parameters
+        ----------
+        inputs : list or set or str, default=None
+            The input variable(s) where the subgraph starts.
+            If None, all pipeline inputs are used.
+        outputs : list or set or str, default=None
+            The output variable(s) where the subgraph ends.
+            If None, all pipeline outputs are used.
+            
+        Returns
+        -------
+        Pipeline
+            A new pipeline containing only the steps that form the subgraph
+            
+        Notes
+        -----
+        The algorithm works by:
+        1. Identifying all steps that produce the specified outputs
+        2. Working backwards to find all steps needed to produce the inputs for those steps
+        3. Continuing until reaching the specified inputs or the start of the pipeline
+        """
+        # Convert single strings to lists for consistent handling
+        if isinstance(inputs, str):
+            inputs = [inputs]
+        if isinstance(outputs, str):
+            outputs = [outputs]
+            
+        # If no inputs are specified, use all external dependencies
+        if inputs is None:
+            inputs = self.get_dependencies()
+            
+        # If no outputs are specified, use all outputs
+        if outputs is None:
+            outputs = self.get_outputs()
+            
+        # Convert to sets for efficient membership testing
+        if not isinstance(inputs, set):
+            inputs = set(inputs)
+        if not isinstance(outputs, set):
+            outputs = set(outputs)
+            
+        # Get environment info to track variable dependencies
+        env_info = self.get_env_info()
+        if not env_info:
+            return self.__class__()  # Return empty pipeline if no steps
+            
+        # Track which variables have been defined in the subgraph
+        defined_vars = set()
+        
+        # Track which steps will be included in the subgraph
+        included_steps = set()
+        
+        # First pass: identify all steps that produce output variables
+        output_steps = set()
+        for i, step_info in enumerate(env_info):
+            step_outputs = step_info['added_vars']
+            if not outputs.isdisjoint(step_outputs):
+                output_steps.add(i)
+                
+        # If no output steps found, return empty pipeline
+        if not output_steps:
+            return self.__class__()
+            
+        # Work backwards from output steps to find all required steps
+        pending_steps = output_steps.copy()
+        while pending_steps:
+            step_idx = max(pending_steps)  # Process steps in reverse order
+            pending_steps.remove(step_idx)
+            
+            # Add this step to included steps
+            included_steps.add(step_idx)
+            
+            # Add outputs of this step to defined variables
+            step_info = env_info[step_idx]
+            defined_vars.update(step_info['added_vars'])
+            
+            # Check if this step depends on variables that need to be produced
+            required_vars = step_info['required_vars'] - inputs
+            if required_vars:
+                # Find steps that produce these variables
+                for i, prev_step_info in enumerate(env_info[:step_idx]):
+                    if i in included_steps:
+                        continue  # Skip steps already included
+                        
+                    # If this step produces any of the required variables, add it to pending
+                    if not required_vars.isdisjoint(prev_step_info['added_vars']):
+                        pending_steps.add(i)
+        
+        # Create new pipeline with included steps
+        included_indices = sorted(included_steps)
+        subgraph_steps = [self.__steps[i] for i in included_indices]
+        
+        return self.__class__(a=subgraph_steps)
+
+    def validate(self, env=None):
+        """
+        Validate that the pipeline can be executed with the given environment.
+        
+        This method checks if all required input variables for the pipeline
+        will be available when executed with the given environment. It identifies
+        potential missing dependencies that would cause execution errors.
+        
+        Parameters
+        ----------
+        env : dict or RunEnv, default=None
+            The environment to validate against. If None, an empty environment is used.
+            
+        Returns
+        -------
+        bool
+            True if the pipeline is valid, False otherwise
+            
+        Raises
+        ------
+        AssertionError
+            If there are missing dependencies, with details about what's missing
+        """
+        # Convert environment to a set of available variables
+        if env is None:
+            available_vars = set()
+        else:
+            available_vars = set(env.keys())
+            
+        # Get environment info to track variable dependencies
+        env_info = self.get_env_info()
+        
+        # If no steps in pipeline, it's valid
+        if not env_info:
+            return True
+            
+        # Track variables that become available during pipeline execution
+        defined_vars = available_vars.copy()
+        
+        # Check each step for missing dependencies
+        for step_idx, step_info in enumerate(env_info):
+            # Get variables required by this step
+            required_vars = step_info['required_vars']
+            
+            # Check if all required variables are available
+            missing_vars = required_vars - defined_vars
+            
+            if missing_vars:
+                step = self.__steps[step_idx]
+                raise AssertionError(
+                    f"Missing dependencies at step {step_idx}: {missing_vars}\n"
+                    f"Step: {step}\n"
+                    f"Available variables: {defined_vars}"
+                )
+                
+            # Add variables defined by this step for next iterations
+            defined_vars.update(step_info['added_vars'])
+            
+            # Remove variables deleted by this step
+            defined_vars -= step_info['removed_vars']
+        
+        return True
+
 
 class _Loc:
     def __init__(self, pipe):
@@ -416,7 +726,7 @@ class _Loc:
     def _stdize_index(self, obj, throw_error: Optional[bool]=True):
         assert type(obj) is int or type(obj) is list or isinstance(obj, sl.Delayed) or isinstance(obj, slice) or isinstance(obj, _Vertical), type(obj)
         if isinstance(obj, sl.Delayed):
-            return self.__pipe.apply(obj)
+            return self.__pipe.map(obj)
         else:
             return obj
     
@@ -490,7 +800,7 @@ class Pipeline(_Pipeline):
         
     def add_step(
             self,
-            step: Union[Function, Delete, VariablesDict],
+            step: Union[Function, Delete, VariablesDict, ImportLib],
             index: Optional[int]=None,
         ):
         """
@@ -509,7 +819,7 @@ class Pipeline(_Pipeline):
         Pipeline
             Self, for method chaining
         """
-        assert isinstance(step, (Function, Delete, VariablesDict)), type(step)
+        assert isinstance(step, (Function, Delete, VariablesDict, ImportLib)), type(step)
         self._add_step(index=index, step=step)
         return self
         
@@ -912,4 +1222,4 @@ def load_pipeline(path: str):
     Pipeline
         The loaded pipeline
     """
-    return sl.utilities.load_obj(path=path)
+    return Pipeline.load(path)

@@ -334,7 +334,7 @@ class Delayed:
         """
         return Delayed(prefix=f'({repr(self)} in {repr(other)})')
 
-    def __not__(self):
+    def __invert__(self):
         """
         Negate the Delayed object.
         

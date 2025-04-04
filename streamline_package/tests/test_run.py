@@ -339,7 +339,7 @@ class TestPipeline(unittest.TestCase):
     def test_pipeline_apply(self):
         def dummy_func(step):
             return step
-        result = self.pipeline.apply(dummy_func)
+        result = self.pipeline.map(dummy_func)
         self.assertIsInstance(result, _Vertical)
         self.assertEqual(len(result), 2)
 

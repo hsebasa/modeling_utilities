@@ -50,7 +50,7 @@ class TestDelayed(unittest.TestCase):
         d = Delayed(prefix='test')
         add_d = d + 5
         self.assertIsInstance(add_d, Delayed)
-        self.assertEqual(repr(add_d), 'test+5')
+        self.assertEqual(repr(add_d), '(test+5)')
         
     def test_comparison_operators(self):
         """Test comparison operators on Delayed objects."""
@@ -59,22 +59,22 @@ class TestDelayed(unittest.TestCase):
         # Test less than
         lt_d = d < 5
         self.assertIsInstance(lt_d, Delayed)
-        self.assertEqual(repr(lt_d), 'test<5')
+        self.assertEqual(repr(lt_d), '(test<5)')
         
         # Test less than or equal
         le_d = d <= 5
         self.assertIsInstance(le_d, Delayed)
-        self.assertEqual(repr(le_d), 'test<=5')
+        self.assertEqual(repr(le_d), '(test<=5)')
         
         # Test greater than
         gt_d = d > 5
         self.assertIsInstance(gt_d, Delayed)
-        self.assertEqual(repr(gt_d), 'test>5')
+        self.assertEqual(repr(gt_d), '(test>5)')
         
         # Test greater than or equal
         ge_d = d >= 5
         self.assertIsInstance(ge_d, Delayed)
-        self.assertEqual(repr(ge_d), 'test>=5')
+        self.assertEqual(repr(ge_d), '(test>=5)')
         
         # Test equality
         eq_d = d == 5

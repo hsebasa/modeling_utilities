@@ -5,13 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 # -*- coding: utf-8 -*-
 
+from typing import List, Dict, Optional, Tuple, Union, Callable, Set
+from copy import copy, deepcopy
+
+from sklearn.base import BaseEstimator
+from statsmodels.base.model import Model as smBaseModel
+
 from streamline import __version__
 import streamline as sl
-from .step import _Step, Function, Delete, VariablesDict, ImportLib
+from .step import _Step, Function, Delete, VariablesDict, ImportLib, Var
+from .modeling import BaseModel, BaseTransformer
 
-from typing import List, Dict, Optional, Tuple, Union, Callable, Set
 from importlib import import_module
-from copy import copy, deepcopy
 
 
 class StepNotFound(Exception):
@@ -724,8 +729,8 @@ class _Loc:
         self.__pipe = pipe
     
     def _stdize_index(self, obj, throw_error: Optional[bool]=True):
-        assert type(obj) is int or type(obj) is list or isinstance(obj, sl.Delayed) or isinstance(obj, slice) or isinstance(obj, _Vertical), type(obj)
-        if isinstance(obj, sl.Delayed):
+        assert type(obj) is int or type(obj) is list or isinstance(obj, sl.Delayed) or isinstance(obj, Callable) or isinstance(obj, slice) or isinstance(obj, _Vertical), type(obj)
+        if isinstance(obj, (sl.Delayed, Callable)):
             return self.__pipe.map(obj)
         else:
             return obj
@@ -822,17 +827,187 @@ class Pipeline(_Pipeline):
         assert isinstance(step, (Function, Delete, VariablesDict, ImportLib)), type(step)
         self._add_step(index=index, step=step)
         return self
+    
+    def add_model(
+            self,
+            model: BaseModel,
+
+            args: Optional[List[str]]=None,
+            out_var: Optional[str]=None,
+
+            *,
+
+            kw: Optional[Dict]=None,
+
+            fit_args: Optional[List[str]]=None,
+            fit_out_var: Optional[Union[str, Tuple[str]]]=None,
+            fit_kw: Optional[Dict]=None,
+            
+            predict_run: Optional[bool]=False,   
+            predict_args: Optional[List[str]]=None,
+            predict_out_var: Optional[Union[str, Tuple[str]]]=None,
+            predict_kw: Optional[Dict]=None,
+
+            index: Optional[int]=None,
+            arg_cat: Optional[str]=None,
+            tags: Optional[Set[str]]=None,
+    ):
+        """
+        Add a model step to the pipeline.
         
+        This method adds a machine learning model (BaseModel instance) to the pipeline.
+        It adds the model as a function step, allowing it to be used within the pipeline
+        for prediction or other operations.
+        
+        Parameters
+        ----------
+        model : BaseModel
+            The machine learning model to add to the pipeline. Must be an instance
+            of BaseModel.
+        index : Optional[int], default=None
+            The index at which to insert the step. If None, the model is appended
+            to the end of the pipeline.
+        args : Optional[List[str]], default=None
+            List of positional arguments or Var references for the model step.
+        kw : Optional[Dict], default=None
+            Dictionary of keyword arguments for the model step.
+        out_var : Optional[Union[str, Tuple[str]]], default=None
+            Name of the variable(s) to store the model object.
+            If None, output is stored in '_'.
+            If a tuple, function must return a tuple of the same length.
+        fit_args : Optional[List[str]], default=None
+            List of positional arguments or Var references for the model's fit method.
+            Only used if the model is fitted within the pipeline.
+        fit_kw : Optional[Dict], default=None
+            Dictionary of keyword arguments for the model's fit method.
+        fit_out_var : Optional[Union[str, Tuple[str]]], default=None
+            Name of the variable(s) to store the output of the model's fit method.
+        predict_run : Optional[bool], default=True
+            Whether to run prediction as part of this step.
+        predict_args : Optional[List[str]], default=None
+            List of positional arguments or Var references for the model's predict method.
+        predict_kw : Optional[Dict], default=None
+            Dictionary of keyword arguments for the model's predict method.
+        predict_out_var : Optional[Union[str, Tuple[str]]], default=None
+            Name of the variable(s) to store the output of the model's predict method.
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps.
+        tags : Optional[Set[str]], default=None
+            Set of tags associated with this step.
+            
+        Returns
+        -------
+        Pipeline
+            Self, for method chaining
+            
+        Examples
+        --------
+        >>> from streamline.pipeline import Pipeline
+        >>> from streamline.pipeline.modeling import BaseModel
+        >>> 
+        >>> # Create a simple model
+        >>> class MyModel(BaseModel):
+        >>>     def fit(self, X, y):
+        >>>         # Implementation
+        >>>         return self
+        >>>     
+        >>>     def predict(self, X):
+        >>>         # Implementation
+        >>>         return predictions
+        >>> 
+        >>> # Create pipeline and add model
+        >>> pipeline = Pipeline()
+        >>> model = MyModel()
+        >>> pipeline.add_model(
+        >>>     model=model,
+        >>>     predict_args=['X'],
+        >>>     predict_out_var='predictions'
+        >>> )
+        >>> 
+        >>> # Run pipeline
+        >>> result = pipeline.run({'X': input_data})
+        >>> predictions = result.get('predictions')
+        
+        Notes
+        -----
+        The model is added as a Function step with a lambda that returns the model.
+        This allows the model to be passed through the pipeline and used by subsequent
+        steps.
+        """
+        assert issubclass(model, (BaseModel, BaseEstimator, smBaseModel)), model
+        
+        if tags is None:
+            tags = set()
+        
+        if fit_args is None:
+            fit_args = []
+
+        if predict_args is None:
+            predict_args = []
+
+        if out_var is None:
+            out_var = sl.utilities.generate_random_variable_name()
+
+        if fit_out_var is None:
+            fit_out_var = f'{out_var}_fit'
+        if predict_out_var is None:
+            predict_out_var = f'{out_var}_predict'
+
+        step_inst = Function(
+            lambda *a, **kw: model(*a, **kw),
+            args=args,
+            kw=kw,
+            out_var=out_var,
+            tags=sl.tags.STEP_MODEL_INSTANCE|tags,
+            arg_cat=arg_cat,
+        )
+        
+        fun_fit = lambda model, *a, **kw: model.fit(*a, **kw)
+        step_fit = Function(
+            fun_fit,
+            args=[Var(out_var)]+fit_args,
+            kw=fit_kw,
+            out_var=fit_out_var,
+            tags=sl.tags.STEP_MODEL_FIT|tags,
+            arg_cat=f'{arg_cat}_fit',
+        )
+
+        self._add_step(index=index, step=step_inst)
+        if index is None:
+            self._add_step(step=step_fit)
+        else:
+            self._add_step(index=index+1, step=step_fit)
+        
+        if predict_run:
+            fun_predict = lambda model_fit, *a, **kw: model_fit.predict(*a, **kw)
+            step_predict = Function(
+                fun_predict,
+                args=[Var(fit_out_var)]+predict_args,
+                kw=predict_kw,
+                out_var=predict_out_var,
+                tags=sl.tags.STEP_MODEL_PREDICT|tags,
+                arg_cat=f'{arg_cat}_predict',
+            )
+
+            if index is None:
+                self._add_step(step=step_predict)
+            else:
+                self._add_step(index=index+2, step=step_predict)
+        
+        return self
+
     def add_function(
             self,
             a: Union[Function, Callable],
-            index: Optional[int]=None,
 
             args: Optional[List[str]]=None,
-            kw: Optional[Dict]=None,
-
             out_var: Optional[Union[str, Tuple[str]]]=None,
 
+            *,
+            
+            kw: Optional[Dict]=None,
+
+            index: Optional[int]=None,
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
@@ -874,8 +1049,10 @@ class Pipeline(_Pipeline):
     def add_delete(
             self,
             a: Union[Delete, str, List[str]],
+
+            *,
+
             index: Optional[int]=None,
-            
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
@@ -910,8 +1087,10 @@ class Pipeline(_Pipeline):
     def add_variables_dict(
             self,
             a: Union[VariablesDict, Dict],
-            index: Optional[int]=None,
 
+            *,
+
+            index: Optional[int]=None,
             arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
@@ -947,7 +1126,11 @@ class Pipeline(_Pipeline):
             self,
             a: Union[Dict, str],
             alias: Optional[str]=None,
+
+            *,
+
             index: Optional[int]=None,
+            arg_cat: Optional[str]=None,
             tags: Optional[Set[str]]=None,
         ):
         """
@@ -962,6 +1145,8 @@ class Pipeline(_Pipeline):
             The alias for the imported library (only used if a is a string)
         index : Optional[int], default=None
             The index at which to insert the step
+        arg_cat : Optional[str], default=None
+            Argument category, used for grouping and filtering steps
         tags : Optional[Set[str]], default=None
             Set of tags associated with this step
             
@@ -988,12 +1173,59 @@ class Pipeline(_Pipeline):
             aliases.append(c[1])
         self.add_function(
             a=Function(
-                lambda : [import_module(n) for n in names], out_var=aliases,
+                lambda : [import_module(n) for n in names],
+                out_var=aliases,
+                arg_cat=arg_cat,
                 tags=sl.tags.STEP_IMPORT_LIB|tags,
             ),
             index=index,
         )
         return self
+
+    def gen_predictor(
+            self,
+            out_var: Optional[str]='_',
+            run_env: Optional[Dict]=None,
+            copy_env: Optional[bool]=True,
+        ):
+        if run_env is None:
+            run_env = sl.RunEnv()
+
+        sub_pipeline = self.get_subgraph(outputs=[out_var]).loc[lambda step: not step.tags >= sl.tags.STEP_MODEL_TRAIN_ONLY]
+        kw = run_env.get('__kwargs__', {})
+        deps = sub_pipeline.get_dependencies()
+        env = {a: b for a, b in run_env.items() if a in set(deps)}
+        class Predictor:
+            def _predict(self, **kwargs):
+                if copy_env:
+                    env_c = env.copy()
+                else:
+                    env_c = env
+                kwargs.update(env_c)
+                
+                assert set(deps).issubset(kwargs.keys()), (
+                    f"Missing dependencies for prediction: {deps - set(kwargs.keys())}"
+                )
+
+                res = sub_pipeline.run(env=kwargs, kw=kw)
+                return res
+
+            def predict(self, **kwargs):
+                """
+                Predict method for the Predictor class.
+                
+                Parameters
+                ----------
+                **kwargs : dict
+                    Keyword arguments to pass to the pipeline
+                
+                Returns
+                -------
+                Any
+                    The result of running the pipeline with the provided arguments
+                """
+                return self._predict(**kwargs).get(out_var)
+        return Predictor()
 
     def _run(self, env: Optional[Dict]=None, kw: Optional[Dict]=None):
         """
@@ -1019,6 +1251,7 @@ class Pipeline(_Pipeline):
             env = sl.RunEnv(env=env)
         if kw is None:
             kw = dict()
+        env['__kwargs__'] = kw.copy()
         
         for step in self.__steps:
             arg_cat = step.arg_cat
@@ -1111,7 +1344,6 @@ class Pipeline(_Pipeline):
 
 
 class DebugPipeline:
-    # TODO: finish class
     """
     DebugPipeline is a subclass of Pipeline that is used for debugging purposes.
     It allows you to run the pipeline and inspect the environment at each step.
@@ -1125,6 +1357,12 @@ class DebugPipeline:
         self._pipeline = Pipeline(a=a)
         self._env = env
         self._run_step = start
+
+    def get_env(self, deep: Optional[bool]=True):
+        """
+        Get the environment of the pipeline.
+        """
+        return self._env.copy(deep=deep)
     
     def reset_run(self, start: Optional[int]=0):
         """
@@ -1149,7 +1387,7 @@ class DebugPipeline:
     
     def run(self, kw: Optional[Dict]=None):
         """
-        Run the pipeline from the current step
+        Run the pipeline
         """
         self.reset()
         self._pipeline.run(env=self._env, kw=kw)
@@ -1165,15 +1403,25 @@ class DebugPipeline:
         self._run_step = l
         return self._env
     
-    def sim_resume(self, a=None, kw: Optional[Dict]=None):
+    def sim_resume(
+            self,
+            step_count: Optional[int]=None,
+            step_end: Optional[int]=None,
+            kw: Optional[Dict]=None,
+            deepcopy_env: Optional[bool]=True
+        ):
         """
         Simulate the run of the pipeline without modifying the environment.
         """
-        if a is None:
-            pipe = self._pipeline[self._run_step:]
-        else:
-            pipe = Pipeline(a=a)
-        env = self._env.copy()
+        assert step_count is None or step_end is None, "Only one of step_count or step_end can be specified"
+        if step_count is None and step_end is None:
+            step_end = len(self._pipeline)
+        elif step_count is not None:
+            step_end = self._run_step + step_count
+        assert step_end >= self._run_step, "step_end must be greater than or equal to the current step"
+        
+        pipe = self._pipeline[self._run_step: step_end]
+        env = self.get_env(deep=deepcopy_env)
         pipe.run(env=env, kw=kw)
         return env
 

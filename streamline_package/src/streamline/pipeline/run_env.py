@@ -156,6 +156,17 @@ class RunEnv:
         """
         return self._env.get(key, default)
     
+    def update(self, other: Dict):
+        """
+        Update the RunEnv with another dictionary.
+        
+        Parameters
+        ----------
+        other : Dict
+            Dictionary of key-value pairs to update the RunEnv with
+        """
+        self._env.update(other)
+    
     def __setitem__(self, key, obj):
         """
         Set a value in the RunEnv.
@@ -319,7 +330,7 @@ class RunEnv:
         kw = dict()
         for c in self._env['__preamble__']['__steps__']:
             for d, e in c['kwargs'].items():
-                kw[c['step'].arg_cat+'.'+d] = e
+                kw[c['step'].arg_cat+'_'+d] = e
         return kw
     
     def save(

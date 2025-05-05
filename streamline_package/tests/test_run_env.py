@@ -158,7 +158,7 @@ class TestRunEnv(unittest.TestCase):
         self.env._add_step(step2, {'param2': 'value2'})
         
         kwargs = self.env.gen_run_kwargs()
-        self.assertEqual(kwargs, {'cat1.param1': 'value1', 'cat2.param2': 'value2'})
+        self.assertEqual(kwargs, {'cat1_param1': 'value1', 'cat2_param2': 'value2'})
         
     def test_save_and_load(self):
         """Test saving and loading RunEnv."""

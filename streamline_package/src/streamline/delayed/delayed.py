@@ -188,7 +188,7 @@ class Delayed:
         Delayed
             A new Delayed object representing the addition operation
         """
-        return Delayed(prefix=f'{repr(self)}+{repr(other)}')
+        return Delayed(prefix=f'({repr(self)}+{repr(other)})')
 
     def __lt__(self, other):
         """
@@ -204,7 +204,7 @@ class Delayed:
         Delayed
             A new Delayed object representing the comparison operation
         """
-        return Delayed(prefix=f'{repr(self)}<{repr(other)}')
+        return Delayed(prefix=f'({repr(self)}<{repr(other)})')
 
     def __le__(self, other):
         """
@@ -220,7 +220,7 @@ class Delayed:
         Delayed
             A new Delayed object representing the comparison operation
         """
-        return Delayed(prefix=f'{repr(self)}<={repr(other)}')
+        return Delayed(prefix=f'({repr(self)}<={repr(other)})')
 
     def __gt__(self, other):
         """
@@ -236,7 +236,7 @@ class Delayed:
         Delayed
             A new Delayed object representing the comparison operation
         """
-        return Delayed(prefix=f'{repr(self)}>{repr(other)}')
+        return Delayed(prefix=f'({repr(self)}>{repr(other)})')
 
     def __ge__(self, other):
         """
@@ -252,7 +252,7 @@ class Delayed:
         Delayed
             A new Delayed object representing the comparison operation
         """
-        return Delayed(prefix=f'{repr(self)}>={repr(other)}')
+        return Delayed(prefix=f'({repr(self)}>={repr(other)})')
 
     def __or__(self, other):
         """
